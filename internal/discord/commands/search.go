@@ -1,17 +1,17 @@
-// Package commands는 각 슬래시 커맨드의 실제 구현을 모아둡니다.
-// 새 커맨드를 추가할 땐 이 디렉토리에 파일을 하나 새로 만들고,
-// discord.Command 인터페이스(Definition, Handle)를 구현하면 됩니다.
 package commands
 
 import (
+	"bytes"
+	"image"
+	"image/png"
 	"log"
+	"maple-discord-bot/internal/nexon"
+	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-
-	"maple-discord-bot/internal/format"
-	"maple-discord-bot/internal/nexon"
+	"github.com/disintegration/imaging"
 )
 
 const (
@@ -19,14 +19,10 @@ const (
 	embedColorError   = 0xE74C3C // 에러용 빨간색
 )
 
-// SearchCommand : "/검색 <닉네임>" 커맨드.
-// 넥슨 API 호출은 nexon.Client에 위임하고, 이 파일은
-// "디스코드 커맨드 정의 + 결과를 임베드로 바꾸는 것"만 책임집니다.
 type SearchCommand struct {
 	Nexon *nexon.Client
 }
 
-// Definition : 디스코드에 등록할 슬래시 커맨드 정의
 func (c *SearchCommand) Definition() *discordgo.ApplicationCommand {
 	return &discordgo.ApplicationCommand{
 		Name:        "검색",
@@ -42,9 +38,7 @@ func (c *SearchCommand) Definition() *discordgo.ApplicationCommand {
 	}
 }
 
-// Handle : "/검색" 실행 시 호출되는 핸들러
 func (c *SearchCommand) Handle(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	// API 호출에 시간이 걸릴 수 있으므로 우선 "생각 중" 응답으로 defer 처리
 	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 	}); err != nil {
@@ -53,25 +47,80 @@ func (c *SearchCommand) Handle(s *discordgo.Session, i *discordgo.InteractionCre
 	}
 
 	characterName := i.ApplicationCommandData().Options[0].StringValue()
-
 	character, err := c.Nexon.SearchCharacterByName(characterName)
 
-	var embed *discordgo.MessageEmbed
 	if err != nil {
 		log.Printf("캐릭터 검색 실패 (%s): %v", characterName, err)
-		embed = buildErrorEmbed(characterName, err)
-	} else {
-		embed = buildCharacterEmbed(character)
+		embed := buildErrorEmbed(characterName, err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Embeds: &[]*discordgo.MessageEmbed{embed},
+		})
+		return
 	}
 
-	if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+	// 1. 이미지 크롭 처리 (메모리 버퍼로 받아옴)
+	imageBuf, err := cropCharacterImage(character.CharacterImage)
+	var embed *discordgo.MessageEmbed
+	var files []*discordgo.File
+
+	if err != nil {
+		log.Printf("이미지 크롭 실패 (기본 이미지로 대체): %v", err)
+		// 크롭 실패 시 에러는 안 띄우고 원본 URL로 빌드
+		embed = buildCharacterEmbed(character, character.CharacterImage, false)
+	} else {
+		// 크롭 성공 시 attachment 포맷 적용 및 파일 배열 준비
+		embed = buildCharacterEmbed(character, "attachment://character.png", true)
+		files = []*discordgo.File{
+			{
+				Name:        "character.png",
+				ContentType: "image/png",
+				Reader:      imageBuf,
+			},
+		}
+	}
+
+	// 2. 파일과 임베드를 동시에 Interaction 응답으로 전송
+	_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 		Embeds: &[]*discordgo.MessageEmbed{embed},
-	}); err != nil {
+		Files:  files,
+	})
+	if err != nil {
 		log.Printf("interaction 응답 수정 실패: %v", err)
 	}
 }
 
-func buildCharacterEmbed(ch *nexon.CharacterBasic) *discordgo.MessageEmbed {
+// cropCharacterImage : 넥슨 이미지 URL을 받아 중심부를 크롭한 뒤 PNG 바이너리 버퍼를 리턴합니다.
+func cropCharacterImage(imageURL string) (*bytes.Buffer, error) {
+	resp, err := http.Get(imageURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	srcImg, _, err := image.Decode(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// 크롭사이즈
+
+	bounds := srcImg.Bounds()
+	cropWidth := int(float64(bounds.Dx()) * 0.35)  // 원본 가로의 55% 크기로
+	cropHeight := int(float64(bounds.Dy()) * 0.35) // 원본 세로의 55% 크기로
+
+	// 중심(Center)을 기준으로 크롭
+	croppedImg := imaging.CropAnchor(srcImg, cropWidth, cropHeight, imaging.Center)
+
+	buf := new(bytes.Buffer)
+	if err := png.Encode(buf, croppedImg); err != nil {
+		return nil, err
+	}
+
+	return buf, nil
+}
+
+// buildCharacterEmbed : 이제 Image가 아닌 Thumbnail을 사용하도록 변경되었습니다.
+func buildCharacterEmbed(ch *nexon.CharacterBasic, imagePath string, isAttachment bool) *discordgo.MessageEmbed {
 	guildName := ch.CharacterGuildName
 	if guildName == "" {
 		guildName = "無소속"
@@ -80,8 +129,9 @@ func buildCharacterEmbed(ch *nexon.CharacterBasic) *discordgo.MessageEmbed {
 	return &discordgo.MessageEmbed{
 		Title: ch.CharacterName + " 님의 캐릭터 정보",
 		Color: embedColorSuccess,
-		Image: &discordgo.MessageEmbedImage{
-			URL: ch.CharacterImage,
+		// 기존 Image 대신 Thumbnail 포맷으로 변경
+		Thumbnail: &discordgo.MessageEmbedThumbnail{
+			URL: imagePath,
 		},
 		Fields: []*discordgo.MessageEmbedField{
 			{Name: "월드", Value: ch.WorldName, Inline: true},
@@ -89,7 +139,6 @@ func buildCharacterEmbed(ch *nexon.CharacterBasic) *discordgo.MessageEmbed {
 			{Name: "레벨", Value: itoa(ch.CharacterLevel), Inline: true},
 			{Name: "길드", Value: guildName, Inline: true},
 			{Name: "경험치", Value: ch.CharacterExpRate + "%", Inline: true},
-			{Name: "캐릭터 생성일", Value: format.Date(ch.CharacterDateCreate), Inline: false},
 		},
 		Footer: &discordgo.MessageEmbedFooter{
 			Text: "Powered by NEXON Open API",

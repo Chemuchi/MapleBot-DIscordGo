@@ -48,7 +48,7 @@ func (b *Bot) Run() error {
 	for name, cmd := range b.commands {
 		// 글로벌 커맨드로 등록 (전파에 최대 1시간 소요될 수 있음).
 		// 개발 중 즉시 반영이 필요하면 두 번째 인자에 guildID를 넣으세요.
-		if _, err := b.session.ApplicationCommandCreate(b.session.State.User.ID, "", cmd.Definition()); err != nil {
+		if _, err := b.session.ApplicationCommandCreate(b.session.State.User.ID, "718826950516277268", cmd.Definition()); err != nil {
 			return fmt.Errorf("커맨드 등록 실패 (%s): %w", name, err)
 		}
 		log.Printf("커맨드 등록 완료: /%s", name)

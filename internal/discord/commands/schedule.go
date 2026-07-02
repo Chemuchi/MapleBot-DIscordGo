@@ -1,0 +1,197 @@
+package commands
+
+import (
+	"fmt"
+	"log"
+	"strings"
+
+	"github.com/bwmarrin/discordgo"
+
+	"maple-discord-bot/internal/nexon"
+)
+
+// ScheduleCommand : "/스케줄러 <닉네임> [날짜]" 커맨드.
+// 캐릭터의 메이플 스케줄러(일일/주간 콘텐츠, 보스 처치) 달성 현황을 보여줍니다.
+type ScheduleCommand struct {
+	Nexon *nexon.Client
+}
+
+func (c *ScheduleCommand) Definition() *discordgo.ApplicationCommand {
+	return &discordgo.ApplicationCommand{
+		Name:        "스케줄러",
+		Description: "캐릭터의 메이플 스케줄러(일일/주간/보스) 달성 현황을 조회합니다.",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "닉네임",
+				Description: "검색할 캐릭터 닉네임",
+				Required:    true,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "날짜",
+				Description: "조회할 날짜 (YYYY-MM-DD, 최대 14일 전까지). 생략하면 오늘 기준 실시간 조회",
+				Required:    false,
+			},
+		},
+	}
+}
+
+func (c *ScheduleCommand) Handle(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	}); err != nil {
+		log.Printf("interaction defer 실패: %v", err)
+		return
+	}
+
+	options := i.ApplicationCommandData().Options
+	characterName := options[0].StringValue()
+
+	date := ""
+	if len(options) > 1 {
+		date = options[1].StringValue()
+	}
+
+	state, err := c.Nexon.SearchSchedulerByName(characterName, date)
+
+	var embed *discordgo.MessageEmbed
+	if err != nil {
+		log.Printf("스케줄러 조회 실패 (%s): %v", characterName, err)
+		embed = buildErrorEmbed(characterName, err)
+	} else {
+		embed = buildScheduleEmbed(state)
+	}
+
+	if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Embeds: &[]*discordgo.MessageEmbed{embed},
+	}); err != nil {
+		log.Printf("interaction 응답 수정 실패: %v", err)
+	}
+}
+
+func buildScheduleEmbed(state *nexon.SchedulerCharacterState) *discordgo.MessageEmbed {
+	fields := []*discordgo.MessageEmbedField{
+		{
+			Name:   "주간 보스 처치",
+			Value:  fmt.Sprintf("%d / %d", state.WeeklyBossClearCount, state.WeeklyBossClearLimitCount),
+			Inline: true,
+		},
+		{
+			Name:   "레벨 / 직업",
+			Value:  fmt.Sprintf("%d · %s", state.CharacterLevel, state.CharacterClass),
+			Inline: true,
+		},
+	}
+
+	if bossField := buildBossField(state.BossContents); bossField != "" {
+		fields = append(fields, &discordgo.MessageEmbedField{
+			Name:  "등록된 보스 처치 현황",
+			Value: bossField,
+		})
+	}
+
+	if dailyField := buildContentField(state.DailyContents); dailyField != "" {
+		fields = append(fields, &discordgo.MessageEmbedField{
+			Name:  "등록된 일일 컨텐츠",
+			Value: dailyField,
+		})
+	}
+
+	if weeklyField := buildContentField(state.WeeklyContents); weeklyField != "" {
+		fields = append(fields, &discordgo.MessageEmbedField{
+			Name:  "등록된 주간 컨텐츠",
+			Value: weeklyField,
+		})
+	}
+
+	return &discordgo.MessageEmbed{
+		Title:  fmt.Sprintf("%s 님의 스케줄러 현황 (%s)", state.CharacterName, formatScheduleDate(state.Date)),
+		Color:  embedColorSuccess,
+		Fields: fields,
+		Footer: &discordgo.MessageEmbedFooter{
+			Text: "Powered by NEXON Open API · quest_state 값의 완료/진행 여부는 별도 확인이 필요할 수 있습니다.",
+		},
+	}
+}
+
+// buildBossField : 등록된 보스만 골라서 완료(✅)/미완료(❌)로 표시.
+// complete_flag는 명확한 true/false라 신뢰도 높게 처리 가능.
+func buildBossField(bosses []nexon.SchedulerBossContent) string {
+	var lines []string
+	for _, b := range bosses {
+		if !b.IsRegistered() {
+			continue
+		}
+		mark := "❌"
+		if b.IsComplete() {
+			mark = "✅"
+		}
+		lines = append(lines, fmt.Sprintf("%s %s (%s)", mark, b.ContentName, difficultyKor(b.Difficulty)))
+	}
+
+	if len(lines) == 0 {
+		return "등록된 보스가 없습니다."
+	}
+
+	return truncate(strings.Join(lines, "\n"), 1000)
+}
+
+// buildContentField : 등록된 일일/주간 콘텐츠·퀘스트 목록을 표시.
+// max_count > 0인 경우 진행률(now/max)을 보여주고, 그렇지 않은 경우
+// quest_state 원본 값을 그대로 노출합니다 (정확한 의미는 재확인 필요).
+func buildContentField(contents []nexon.SchedulerContent) string {
+	var lines []string
+	for _, item := range contents {
+		if !item.IsRegistered() {
+			continue
+		}
+
+		switch {
+		case item.HasProgress():
+			lines = append(lines, fmt.Sprintf("• %s (%d/%d)", item.ContentName, item.NowCount, item.MaxCount))
+		case item.QuestState != nil:
+			lines = append(lines, fmt.Sprintf("• %s (상태값: %s)", item.ContentName, *item.QuestState))
+		default:
+			lines = append(lines, "• "+item.ContentName)
+		}
+	}
+
+	if len(lines) == 0 {
+		return "등록된 항목이 없습니다."
+	}
+
+	return truncate(strings.Join(lines, "\n"), 1000)
+}
+
+func difficultyKor(d string) string {
+	switch d {
+	case "easy":
+		return "이지"
+	case "normal":
+		return "노멀"
+	case "hard":
+		return "하드"
+	case "chaos":
+		return "카오스"
+	case "extreme":
+		return "익스트림"
+	default:
+		return d
+	}
+}
+
+// formatScheduleDate : "2026-07-02T00:00+09:00" -> "2026-07-02"
+func formatScheduleDate(raw string) string {
+	if len(raw) >= 10 {
+		return raw[:10]
+	}
+	return raw
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "\n...(생략)"
+}
