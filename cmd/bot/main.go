@@ -37,6 +37,7 @@ func main() {
 	// 새 기능을 추가할 때마다 여기에 한 줄씩 추가하면 됩니다.
 	bot.Register(&commands.SearchCommand{Nexon: nexonClient})
 	bot.Register(&commands.ScheduleCommand{Nexon: nexonClient})
+	bot.Register(&commands.BotInfoCommand{})
 
 	if err := bot.Run(); err != nil {
 		log.Fatalf("봇 실행 실패: %v", err)
