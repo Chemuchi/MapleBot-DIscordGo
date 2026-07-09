@@ -70,5 +70,6 @@ jobs:
               -e DISCORD_BOT_TOKEN="${{ secrets.DISCORD_BOT_TOKEN }}" \
               -e NEXON_API_KEY="${{ secrets.NEXON_API_KEY }}" \
               -e SUNDAY_CHANNEL_ID="${{ secrets.SUNDAY_CHANNEL_ID }}" \
+              -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               -e COMMIT_SHA="${SHORT_SHA}" \
               ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}
