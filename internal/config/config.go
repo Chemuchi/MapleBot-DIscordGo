@@ -14,6 +14,7 @@ type Config struct {
 	DiscordBotToken string
 	NexonAPIKey     string
 	SundayChannelID string // 썬데이 메이플 공지 전송 대상 채널 ID
+	DatabaseURL     string // Supabase 데이터베이스 연결 URL
 }
 
 // Load : .env 파일(있으면)을 읽어들인 뒤, 필수 환경변수를 검증하여 Config를 반환합니다.
@@ -37,10 +38,14 @@ func Load() (*Config, error) {
 	// 썬데이 채널 ID는 선택적으로 로드 (설정 안 되어있으면 스케줄러는 작동 안함)
 	sundayChannelID := os.Getenv("SUNDAY_CHANNEL_ID")
 
+	// 데이터베이스 URL 역시 선택적으로 로드
+	databaseURL := os.Getenv("DATABASE_URL")
+
 	return &Config{
 		DiscordBotToken: token,
 		NexonAPIKey:     apiKey,
 		SundayChannelID: sundayChannelID,
+		DatabaseURL:     databaseURL,
 	}, nil
 }
 

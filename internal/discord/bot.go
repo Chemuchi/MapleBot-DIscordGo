@@ -3,6 +3,7 @@
 package discord
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 
@@ -17,10 +18,11 @@ type Bot struct {
 	commands        map[string]Command // 커맨드 이름 -> Command 구현체
 	nexonClient     *nexon.Client      // 넥슨 API 클라이언트
 	sundayChannelID string             // 알림 전송 채널 ID
+	db              *sql.DB            // 데이터베이스 인스턴스
 }
 
 // New : 봇 토큰으로 새 Bot을 생성합니다.
-func New(token string, nexonClient *nexon.Client, sundayChannelID string) (*Bot, error) {
+func New(token string, nexonClient *nexon.Client, sundayChannelID string, db *sql.DB) (*Bot, error) {
 	session, err := discordgo.New("Bot " + token)
 	if err != nil {
 		return nil, fmt.Errorf("디스코드 세션 생성 실패: %w", err)
@@ -32,6 +34,7 @@ func New(token string, nexonClient *nexon.Client, sundayChannelID string) (*Bot,
 		commands:        make(map[string]Command),
 		nexonClient:     nexonClient,
 		sundayChannelID: sundayChannelID,
+		db:              db,
 	}, nil
 }
 

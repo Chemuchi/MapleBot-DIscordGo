@@ -9,12 +9,14 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"maple-discord-bot/internal/config"
+	"maple-discord-bot/internal/database"
 	"maple-discord-bot/internal/discord"
 	"maple-discord-bot/internal/discord/commands"
 	"maple-discord-bot/internal/nexon"
@@ -28,7 +30,22 @@ func main() {
 
 	nexonClient := nexon.NewClient(cfg.NexonAPIKey)
 
-	bot, err := discord.New(cfg.DiscordBotToken, nexonClient, cfg.SundayChannelID)
+	// 데이터베이스 초기화
+	var db *sql.DB
+	if cfg.DatabaseURL != "" {
+		var dbErr error
+		db, dbErr = database.Connect(cfg.DatabaseURL)
+		if dbErr != nil {
+			log.Printf("데이터베이스 초기 연결 실패 (봇 구동은 계속 진행): %v", dbErr)
+		} else {
+			log.Println("데이터베이스 연결 성공!")
+			defer db.Close()
+		}
+	} else {
+		log.Println("DATABASE_URL이 설정되지 않아 데이터베이스 연동 없이 봇을 시작합니다.")
+	}
+
+	bot, err := discord.New(cfg.DiscordBotToken, nexonClient, cfg.SundayChannelID, db)
 	if err != nil {
 		log.Fatalf("봇 생성 실패: %v", err)
 	}
@@ -38,6 +55,7 @@ func main() {
 	bot.Register(&commands.SearchCommand{Nexon: nexonClient})
 	bot.Register(&commands.ScheduleCommand{Nexon: nexonClient})
 	bot.Register(&commands.BotInfoCommand{})
+	bot.Register(&commands.BotStatusCommand{DB: db})
 
 
 

@@ -33,16 +33,13 @@ func (c *BotInfoCommand) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 		commitSHA = "development (local)"
 	}
 
-	ping := s.HeartbeatLatency().Milliseconds()
-
 	// 2. 기존 캐릭터 검색 포맷과 통일성을 맞춘 임베드 생성
 	embed := &discordgo.MessageEmbed{
-		Title:       "🤖 MapleBot 상태 정보",
-		Description: "현재 컨테이너 인프라에서 실행 중인 봇의 메타데이터입니다.",
+		Title:       "🤖 MapleBot 배포 정보",
+		Description: "현재 컨테이너 인프라에서 실행 중인 봇의 배포 메타데이터입니다.",
 		Color:       botInfoColor,
 		Fields: []*discordgo.MessageEmbedField{
 			{Name: "Git 커밋 해시", Value: fmt.Sprintf("`%s`", commitSHA), Inline: true},
-			{Name: "핑", Value: fmt.Sprintf("`%dms`", ping), Inline: true},
 		},
 		Timestamp: time.Now().Format(time.RFC3339),
 	}
