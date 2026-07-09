@@ -7,16 +7,20 @@ import (
 	"log"
 
 	"github.com/bwmarrin/discordgo"
+
+	"maple-discord-bot/internal/nexon"
 )
 
 // Bot : 디스코드 세션과 등록된 커맨드들을 관리합니다.
 type Bot struct {
-	session  *discordgo.Session
-	commands map[string]Command // 커맨드 이름 -> Command 구현체
+	session         *discordgo.Session
+	commands        map[string]Command // 커맨드 이름 -> Command 구현체
+	nexonClient     *nexon.Client      // 넥슨 API 클라이언트
+	sundayChannelID string             // 알림 전송 채널 ID
 }
 
 // New : 봇 토큰으로 새 Bot을 생성합니다.
-func New(token string) (*Bot, error) {
+func New(token string, nexonClient *nexon.Client, sundayChannelID string) (*Bot, error) {
 	session, err := discordgo.New("Bot " + token)
 	if err != nil {
 		return nil, fmt.Errorf("디스코드 세션 생성 실패: %w", err)
@@ -24,8 +28,10 @@ func New(token string) (*Bot, error) {
 	session.Identify.Intents = discordgo.IntentsNone
 
 	return &Bot{
-		session:  session,
-		commands: make(map[string]Command),
+		session:         session,
+		commands:        make(map[string]Command),
+		nexonClient:     nexonClient,
+		sundayChannelID: sundayChannelID,
 	}, nil
 }
 
@@ -53,6 +59,9 @@ func (b *Bot) Run() error {
 		}
 		log.Printf("커맨드 등록 완료: /%s", name)
 	}
+
+	// 썬데이 메이플 백그라운드 알림 루프 실행
+	go b.StartSundayNoticeLoop()
 
 	return nil
 }

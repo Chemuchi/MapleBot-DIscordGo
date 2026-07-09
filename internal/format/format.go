@@ -46,3 +46,20 @@ func Date(raw string) string {
 	// 모든 레이아웃 파싱 실패 시 원본 문자열 그대로 반환
 	return raw
 }
+
+// DateTime : 넥슨 API가 내려주는 날짜 문자열을 "2006년 01월 02일 15시 04분" 형태로 변환합니다.
+func DateTime(raw string) string {
+	layouts := []string{
+		time.RFC3339,             // 2026-06-18T00:00:00+09:00
+		"2006-01-02T15:04Z07:00", // 2026-06-18T00:00+09:00 (초 생략)
+	}
+
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, raw); err == nil {
+			return t.Format("2006년 01월 02일 15시 04분")
+		}
+	}
+
+	return raw
+}
+

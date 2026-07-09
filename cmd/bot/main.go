@@ -28,7 +28,7 @@ func main() {
 
 	nexonClient := nexon.NewClient(cfg.NexonAPIKey)
 
-	bot, err := discord.New(cfg.DiscordBotToken)
+	bot, err := discord.New(cfg.DiscordBotToken, nexonClient, cfg.SundayChannelID)
 	if err != nil {
 		log.Fatalf("봇 생성 실패: %v", err)
 	}
@@ -38,6 +38,8 @@ func main() {
 	bot.Register(&commands.SearchCommand{Nexon: nexonClient})
 	bot.Register(&commands.ScheduleCommand{Nexon: nexonClient})
 	bot.Register(&commands.BotInfoCommand{})
+
+
 
 	if err := bot.Run(); err != nil {
 		log.Fatalf("봇 실행 실패: %v", err)
