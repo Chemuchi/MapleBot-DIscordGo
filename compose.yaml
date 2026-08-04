@@ -1,11 +1,11 @@
-name: maple-sunday-bot
+name: maple_bot
 
 services:
   mysql:
     image: mysql:8.4
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-maple_sunday_bot}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-maple_bot}
       MYSQL_USER: ${MYSQL_USER:-maple_bot}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-local-dev-password}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-local-root-password}
@@ -30,7 +30,7 @@ services:
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-maple_sunday_bot}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-maple_bot}
       MYSQL_USER: ${MYSQL_USER:-maple_bot}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-local-dev-password}
       MYSQL_TLS_MODE: ${MYSQL_TLS_MODE:-false}
