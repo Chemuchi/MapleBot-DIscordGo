@@ -38,21 +38,19 @@ func main() {
 		var dbErr error
 		db, dbErr = database.ConnectMySQL(cfg.MySQL)
 		if dbErr != nil {
-			log.Printf("데이터베이스 초기 연결 실패 (봇 구동은 계속 진행): %v", dbErr)
-		} else {
-			log.Println("MySQL 데이터베이스 연결 성공!")
-			defer db.Close()
+			log.Fatalf("MySQL 데이터베이스 초기 연결 실패: %v", dbErr)
 		}
+		log.Println("MySQL 데이터베이스 연결 성공!")
+		defer db.Close()
 	} else if cfg.DatabaseURL != "" {
 		// 운영 MySQL 전환 전까지 기존 Supabase 배포를 위한 호환 경로를 유지합니다.
 		var dbErr error
 		db, dbErr = database.ConnectPostgres(cfg.DatabaseURL)
 		if dbErr != nil {
-			log.Printf("기존 PostgreSQL 데이터베이스 초기 연결 실패 (봇 구동은 계속 진행): %v", dbErr)
-		} else {
-			log.Println("기존 PostgreSQL 데이터베이스 연결 성공!")
-			defer db.Close()
+			log.Fatalf("기존 PostgreSQL 데이터베이스 초기 연결 실패: %v", dbErr)
 		}
+		log.Println("기존 PostgreSQL 데이터베이스 연결 성공!")
+		defer db.Close()
 	} else {
 		log.Println("MYSQL_* 또는 DATABASE_URL이 설정되지 않아 데이터베이스 연동 없이 봇을 시작합니다.")
 	}

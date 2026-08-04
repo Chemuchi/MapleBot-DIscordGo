@@ -72,6 +72,12 @@ jobs:
               -e API_KEY_ENCRYPTION_KEY="${{ secrets.API_KEY_ENCRYPTION_KEY }}" \
               -e API_KEY_ENCRYPTION_PREVIOUS_KEYS="${{ secrets.API_KEY_ENCRYPTION_PREVIOUS_KEYS }}" \
               -e SUNDAY_CHANNEL_ID="${{ secrets.SUNDAY_CHANNEL_ID }}" \
+              -e MYSQL_HOST="${{ secrets.MYSQL_HOST }}" \
+              -e MYSQL_PORT="${{ secrets.MYSQL_PORT }}" \
+              -e MYSQL_DATABASE="${{ secrets.MYSQL_DATABASE }}" \
+              -e MYSQL_USER="${{ secrets.MYSQL_USER }}" \
+              -e MYSQL_PASSWORD="${{ secrets.MYSQL_PASSWORD }}" \
+              -e MYSQL_TLS_MODE="${{ secrets.MYSQL_TLS_MODE }}" \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               -e COMMIT_SHA="${SHORT_SHA}" \
               ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}
