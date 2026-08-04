@@ -150,7 +150,7 @@ func buildScheduleEmbed(state *nexon.SchedulerCharacterState) *discordgo.Message
 		Color:  embedColorSuccess,
 		Fields: fields,
 		Footer: &discordgo.MessageEmbedFooter{
-			Text: "Powered by NEXON Open API · quest_state 값의 완료/진행 여부는 별도 확인이 필요할 수 있습니다.",
+			Text: "Powered by NEXON Open API",
 		},
 	}
 }
@@ -167,7 +167,7 @@ func buildBossField(bosses []nexon.SchedulerBossContent) string {
 		if b.IsComplete() {
 			mark = "✅"
 		}
-		lines = append(lines, fmt.Sprintf("%s %s (%s)", mark, b.ContentName, difficultyKor(b.Difficulty)))
+		lines = append(lines, fmt.Sprintf("%s (%s) %s", b.ContentName, difficultyKor(b.Difficulty), mark))
 	}
 
 	if len(lines) == 0 {
@@ -178,8 +178,8 @@ func buildBossField(bosses []nexon.SchedulerBossContent) string {
 }
 
 // buildContentField : 등록된 일일/주간 콘텐츠·퀘스트 목록을 표시.
-// max_count > 0인 경우 진행률(now/max)을 보여주고, 그렇지 않은 경우
-// quest_state 원본 값을 그대로 노출합니다 (정확한 의미는 재확인 필요).
+// 일일 퀘스트는 quest_state 2를 완료로 보고, 길드 지하수로/플래그레이스는
+// now_count를 점수로 표시합니다. 그 외 max_count > 0인 항목은 진행률을 표시합니다.
 func buildContentField(contents []nexon.SchedulerContent) string {
 	var lines []string
 	for _, item := range contents {
@@ -188,6 +188,22 @@ func buildContentField(contents []nexon.SchedulerContent) string {
 		}
 
 		switch {
+		case strings.HasPrefix(item.ContentName, "[일일 퀘스트]") || strings.Contains(item.ContentName, "익스트림 몬스터파커"):
+			mark := "❌"
+			if item.QuestState != nil && *item.QuestState == "2" {
+				mark = "✅"
+			}
+			lines = append(lines, fmt.Sprintf("• %s %s", item.ContentName, mark))
+		case strings.HasPrefix(item.ContentName, "에픽 던전"):
+			mark := "❌"
+			if item.NowCount >= 1 {
+				mark = "✅"
+			}
+			lines = append(lines, fmt.Sprintf("• %s %s", item.ContentName, mark))
+		case item.ContentName == "[길드] 지하 수로":
+			lines = append(lines, fmt.Sprintf("• [길드] 지하수로: %d점", item.NowCount))
+		case item.ContentName == "[길드] 플래그 레이스":
+			lines = append(lines, fmt.Sprintf("• [길드] 플래그레이스: %d점", item.NowCount))
 		case item.HasProgress():
 			lines = append(lines, fmt.Sprintf("• %s (%d/%d)", item.ContentName, item.NowCount, item.MaxCount))
 		case item.QuestState != nil:
