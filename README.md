@@ -77,11 +77,46 @@ go mod tidy
 
 # 2. .env 파일 생성 (.env.example을 복사해서 실제 값 채우기)
 cp .env.example .env
-# .env 파일을 열어서 DISCORD_BOT_TOKEN, NEXON_API_KEY 값을 채워넣기
+# .env 파일을 열어서 토큰과 API 키 값을 채워넣기
+# 사용자 API Key 암호화 키 생성 (출력값을 API_KEY_ENCRYPTION_KEY에 입력)
+openssl rand -base64 32
 
 # 3. 실행 (진입점이 cmd/bot/main.go로 이동했습니다)
 go run ./cmd/bot
 ```
+
+### Docker Compose로 로컬 MySQL과 실행
+
+`.env.example`을 `.env`로 복사한 뒤 Discord/Nexon 값을 채우고 실행합니다.
+로컬에서 명령어를 즉시 반영하려면 개발용 디스코드 서버 ID도 설정합니다.
+
+```env
+DISCORD_GUILD_ID="개발용 서버 ID"
+```
+
+```bash
+docker compose up --build -d
+docker compose ps
+docker compose logs -f bot
+```
+
+봇은 Compose 네트워크에서 `mysql:3306`에 연결하며, MySQL health check가 통과한 뒤 시작합니다.
+데이터는 `mysql_data` named volume에 보존됩니다. `docker compose down -v`는 데이터를 삭제하므로 사용하지 마세요.
+봇 시작 시 `user_api_keys` 테이블이 자동 생성되며 `/세팅`으로 입력받은 API Key는
+AES-256-GCM 암호문으로만 저장됩니다. 같은 API Key도 매번 무작위 nonce를 사용하므로 서로 다른 암호문이 됩니다.
+
+### API Key 암호화 키 교체
+
+암호화 키는 일반적인 "시드"와 달리 잃어버리면 기존 데이터를 복구할 수 없는 비밀 키입니다.
+키를 바꿀 때는 기존 키를 즉시 삭제하지 말고 아래 순서로 교체합니다.
+
+1. 기존 `API_KEY_ENCRYPTION_KEY` 값을 `API_KEY_ENCRYPTION_PREVIOUS_KEYS`에 옮깁니다.
+2. `openssl rand -base64 32`로 새 키를 만들고 `API_KEY_ENCRYPTION_KEY`에 설정합니다.
+3. 봇을 재시작합니다. 시작 과정에서 기존 데이터 전체가 이전 키로 복호화된 뒤 새 키로 자동 재암호화됩니다.
+4. 로그에서 `사용자 API 키 암호화 저장소 초기화 성공!`을 확인한 뒤 이전 키 환경변수를 제거합니다.
+
+이전 키가 여러 개라면 `API_KEY_ENCRYPTION_PREVIOUS_KEYS="이전키1,이전키2"`처럼 쉼표로 구분합니다.
+암호화 키는 `.env`, 배포 환경의 Secret Manager 등에서만 관리하고 Git에는 커밋하지 마세요.
 
 `.env` 파일은 `godotenv` 패키지로 프로그램 시작 시 자동으로 읽어옵니다.
 `.gitignore`에 `.env`가 등록되어 있어서 실수로 깃 저장소에 토큰이 올라가는 걸 막아줍니다.
@@ -89,10 +124,8 @@ go run ./cmd/bot
 
 ## 주의사항
 
-- `bot.Run()`에서 `ApplicationCommandCreate`의 guildID를 빈 문자열로 두면
-  **글로벌 커맨드**로 등록됩니다. 전 서버 반영까지 최대 1시간 정도 걸릴 수 있어요.
-  개발 중 즉시 반영이 필요하면 `internal/discord/bot.go`의 해당 줄에
-  테스트 서버 ID를 하드코딩해서 쓰세요.
+- 로컬 `.env`에 `DISCORD_GUILD_ID`가 있으면 해당 서버에 길드 커맨드로 등록되어 바로 반영됩니다.
+  배포 환경처럼 값이 없으면 글로벌 커맨드로 등록되며 전 서버 반영까지 최대 1시간 정도 걸릴 수 있습니다.
 - 넥슨 오픈 API는 요청 한도(rate limit)가 있습니다. `429` 응답은
   "요청 한도를 초과했습니다" 메시지로 안내하도록 이미 처리해두었습니다.
 - `character_image` URL은 시간이 지나면 만료/변경될 수 있는 서명된 URL입니다.

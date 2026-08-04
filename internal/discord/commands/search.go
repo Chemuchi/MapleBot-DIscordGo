@@ -19,6 +19,10 @@ const (
 	embedColorError   = 0xE74C3C // 에러용 빨간색
 )
 
+var characterImageHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
+
 type SearchCommand struct {
 	Nexon *nexon.Client
 }
@@ -41,6 +45,9 @@ func (c *SearchCommand) Definition() *discordgo.ApplicationCommand {
 func (c *SearchCommand) Handle(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Flags: discordgo.MessageFlagsEphemeral,
+		},
 	}); err != nil {
 		log.Printf("interaction defer 실패: %v", err)
 		return
@@ -91,7 +98,7 @@ func (c *SearchCommand) Handle(s *discordgo.Session, i *discordgo.InteractionCre
 
 // cropCharacterImage : 넥슨 이미지 URL을 받아 중심부를 크롭한 뒤 PNG 바이너리 버퍼를 리턴합니다.
 func cropCharacterImage(imageURL string) (*bytes.Buffer, error) {
-	resp, err := http.Get(imageURL)
+	resp, err := characterImageHTTPClient.Get(imageURL)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +130,7 @@ func cropCharacterImage(imageURL string) (*bytes.Buffer, error) {
 func buildCharacterEmbed(ch *nexon.CharacterBasic, imagePath string, isAttachment bool) *discordgo.MessageEmbed {
 	guildName := ch.CharacterGuildName
 	if guildName == "" {
-		guildName = "無소속"
+		guildName = "(길드없음)"
 	}
 
 	return &discordgo.MessageEmbed{
@@ -139,6 +146,7 @@ func buildCharacterEmbed(ch *nexon.CharacterBasic, imagePath string, isAttachmen
 			{Name: "레벨", Value: itoa(ch.CharacterLevel), Inline: true},
 			{Name: "길드", Value: guildName, Inline: true},
 			{Name: "경험치", Value: ch.CharacterExpRate + "%", Inline: true},
+			{Name: "환산", Value: "[바로가기](https://maplescouter.com/ko/info?name=" + ch.CharacterName + ")", Inline: false},
 		},
 		Footer: &discordgo.MessageEmbedFooter{
 			Text: "Powered by NEXON Open API",

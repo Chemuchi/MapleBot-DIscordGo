@@ -27,7 +27,7 @@ func (c *BotStatusCommand) Handle(s *discordgo.Session, i *discordgo.Interaction
 	// 데이터베이스 실제 연결 상태 검사
 	dbStatus := "🟢 연결됨"
 	if c.DB == nil {
-		dbStatus = "🔴 미연동 (DATABASE_URL 설정 누락)"
+		dbStatus = "🔴 미연동 (DB 환경변수 설정 누락)"
 	} else if err := c.DB.Ping(); err != nil {
 		dbStatus = fmt.Sprintf("🔴 연결 오류 (%v)", err)
 	}
@@ -47,6 +47,7 @@ func (c *BotStatusCommand) Handle(s *discordgo.Session, i *discordgo.Interaction
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Embeds: []*discordgo.MessageEmbed{embed},
+			Flags:  discordgo.MessageFlagsEphemeral,
 		},
 	})
 

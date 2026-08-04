@@ -1,25 +1,34 @@
 package commands
 
 import (
+	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
+	"maple-discord-bot/internal/database"
 	"maple-discord-bot/internal/nexon"
 )
+
+type schedulerAPIKeyFinder interface {
+	Find(ctx context.Context, discordUserID string) (string, error)
+}
 
 // ScheduleCommand : "/스케줄러 <닉네임> [날짜]" 커맨드.
 // 캐릭터의 메이플 스케줄러(일일/주간 콘텐츠, 보스 처치) 달성 현황을 보여줍니다.
 type ScheduleCommand struct {
-	Nexon *nexon.Client
+	APIKeys *database.UserAPIKeyStore
 }
 
 func (c *ScheduleCommand) Definition() *discordgo.ApplicationCommand {
 	return &discordgo.ApplicationCommand{
 		Name:        "스케줄러",
-		Description: "캐릭터의 메이플 스케줄러(일일/주간/보스) 달성 현황을 조회합니다.",
+		Description: "캐릭터의 금일 메이플 스케줄러 상황을 조회합니다.",
 		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Type:        discordgo.ApplicationCommandOptionString,
@@ -38,8 +47,34 @@ func (c *ScheduleCommand) Definition() *discordgo.ApplicationCommand {
 }
 
 func (c *ScheduleCommand) Handle(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	userID := interactionUserID(i)
+	if userID == "" {
+		respondEphemeral(s, i, "디스코드 사용자 정보를 확인할 수 없습니다. 다시 시도해 주세요.")
+		return
+	}
+	if c.APIKeys == nil {
+		respondEphemeral(s, i, "현재 데이터베이스에 연결할 수 없어 스케줄러를 조회할 수 없습니다.")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	apiKey, err := lookupSchedulerAPIKey(ctx, c.APIKeys, userID)
+	cancel()
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && apiKey == "") {
+		respondEphemeral(s, i, "등록된 넥슨 Open API 키가 없습니다. 먼저 `/세팅` 명령어로 API 키를 등록해 주세요.")
+		return
+	}
+	if err != nil {
+		log.Printf("스케줄러 사용자 API 키 조회 실패 (discord_user_id=%s): %v", userID, err)
+		respondEphemeral(s, i, "저장된 API 키를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.")
+		return
+	}
+
 	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Flags: discordgo.MessageFlagsEphemeral,
+		},
 	}); err != nil {
 		log.Printf("interaction defer 실패: %v", err)
 		return
@@ -53,7 +88,8 @@ func (c *ScheduleCommand) Handle(s *discordgo.Session, i *discordgo.InteractionC
 		date = options[1].StringValue()
 	}
 
-	state, err := c.Nexon.SearchSchedulerByName(characterName, date)
+	userNexonClient := nexon.NewClient(apiKey)
+	state, err := userNexonClient.SearchSchedulerByName(characterName, date)
 
 	var embed *discordgo.MessageEmbed
 	if err != nil {
@@ -68,6 +104,10 @@ func (c *ScheduleCommand) Handle(s *discordgo.Session, i *discordgo.InteractionC
 	}); err != nil {
 		log.Printf("interaction 응답 수정 실패: %v", err)
 	}
+}
+
+func lookupSchedulerAPIKey(ctx context.Context, finder schedulerAPIKeyFinder, userID string) (string, error) {
+	return finder.Find(ctx, userID)
 }
 
 func buildScheduleEmbed(state *nexon.SchedulerCharacterState) *discordgo.MessageEmbed {

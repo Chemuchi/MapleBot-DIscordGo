@@ -9,11 +9,13 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"maple-discord-bot/internal/config"
 	"maple-discord-bot/internal/database"
@@ -32,20 +34,30 @@ func main() {
 
 	// 데이터베이스 초기화
 	var db *sql.DB
-	if cfg.DatabaseURL != "" {
+	if cfg.MySQL.Enabled() {
 		var dbErr error
-		db, dbErr = database.Connect(cfg.DatabaseURL)
+		db, dbErr = database.ConnectMySQL(cfg.MySQL)
 		if dbErr != nil {
 			log.Printf("데이터베이스 초기 연결 실패 (봇 구동은 계속 진행): %v", dbErr)
 		} else {
-			log.Println("데이터베이스 연결 성공!")
+			log.Println("MySQL 데이터베이스 연결 성공!")
+			defer db.Close()
+		}
+	} else if cfg.DatabaseURL != "" {
+		// 운영 MySQL 전환 전까지 기존 Supabase 배포를 위한 호환 경로를 유지합니다.
+		var dbErr error
+		db, dbErr = database.ConnectPostgres(cfg.DatabaseURL)
+		if dbErr != nil {
+			log.Printf("기존 PostgreSQL 데이터베이스 초기 연결 실패 (봇 구동은 계속 진행): %v", dbErr)
+		} else {
+			log.Println("기존 PostgreSQL 데이터베이스 연결 성공!")
 			defer db.Close()
 		}
 	} else {
-		log.Println("DATABASE_URL이 설정되지 않아 데이터베이스 연동 없이 봇을 시작합니다.")
+		log.Println("MYSQL_* 또는 DATABASE_URL이 설정되지 않아 데이터베이스 연동 없이 봇을 시작합니다.")
 	}
 
-	bot, err := discord.New(cfg.DiscordBotToken, nexonClient, cfg.SundayChannelID, db)
+	bot, err := discord.New(cfg.DiscordBotToken, cfg.DiscordGuildID, nexonClient, cfg.SundayChannelID, db)
 	if err != nil {
 		log.Fatalf("봇 생성 실패: %v", err)
 	}
@@ -53,11 +65,31 @@ func main() {
 	// ---- 커맨드 등록 ----
 	// 새 기능을 추가할 때마다 여기에 한 줄씩 추가하면 됩니다.
 	bot.Register(&commands.SearchCommand{Nexon: nexonClient})
-	bot.Register(&commands.ScheduleCommand{Nexon: nexonClient})
+	var apiKeyStore *database.UserAPIKeyStore
+	if db != nil {
+		apiKeyCipher, cipherErr := database.NewAPIKeyCipher(
+			cfg.APIKeyEncryptionKey,
+			cfg.APIKeyEncryptionPreviousKeys,
+		)
+		if cipherErr != nil {
+			log.Printf("사용자 API 키 암호화 초기화 실패 (/세팅 비활성화): %v", cipherErr)
+		} else {
+			apiKeyStore = database.NewUserAPIKeyStore(db, apiKeyCipher)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if err := apiKeyStore.EnsureSchema(ctx); err != nil {
+				log.Printf("사용자 API 키 테이블 초기화 실패: %v", err)
+				apiKeyStore = nil
+			} else {
+				log.Println("사용자 API 키 암호화 저장소 초기화 성공!")
+			}
+			cancel()
+		}
+	}
+	bot.Register(&commands.ScheduleCommand{APIKeys: apiKeyStore})
+	bot.Register(&commands.SettingsCommand{APIKeys: apiKeyStore})
+	bot.Register(&commands.ResetCommand{APIKeys: apiKeyStore})
 	bot.Register(&commands.BotInfoCommand{})
 	bot.Register(&commands.BotStatusCommand{DB: db})
-
-
 
 	if err := bot.Run(); err != nil {
 		log.Fatalf("봇 실행 실패: %v", err)

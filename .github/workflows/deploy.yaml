@@ -62,13 +62,15 @@ jobs:
             
             docker image prune -a -f
             
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}
             docker run -d \
               --name my-discord-bot \
               --restart always \
               --memory="512m" \
               -e DISCORD_BOT_TOKEN="${{ secrets.DISCORD_BOT_TOKEN }}" \
               -e NEXON_API_KEY="${{ secrets.NEXON_API_KEY }}" \
+              -e API_KEY_ENCRYPTION_KEY="${{ secrets.API_KEY_ENCRYPTION_KEY }}" \
+              -e API_KEY_ENCRYPTION_PREVIOUS_KEYS="${{ secrets.API_KEY_ENCRYPTION_PREVIOUS_KEYS }}" \
               -e SUNDAY_CHANNEL_ID="${{ secrets.SUNDAY_CHANNEL_ID }}" \
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               -e COMMIT_SHA="${SHORT_SHA}" \

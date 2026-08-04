@@ -13,3 +13,19 @@ type Command interface {
 	// Handle : 실제 사용자가 커맨드를 실행했을 때 호출되는 핸들러
 	Handle(s *discordgo.Session, i *discordgo.InteractionCreate)
 }
+
+// ModalCommand : 슬래시 커맨드에서 연 모달 제출까지 처리하는 커맨드가 구현합니다.
+type ModalCommand interface {
+	Command
+
+	ModalCustomID() string
+	HandleModal(s *discordgo.Session, i *discordgo.InteractionCreate)
+}
+
+// ComponentCommand : 버튼이나 셀렉트 메뉴 인터랙션까지 처리하는 커맨드가 구현합니다.
+type ComponentCommand interface {
+	Command
+
+	ComponentCustomIDs() []string
+	HandleComponent(s *discordgo.Session, i *discordgo.InteractionCreate)
+}

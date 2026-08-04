@@ -49,6 +49,7 @@ func (c *BotInfoCommand) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Embeds: []*discordgo.MessageEmbed{embed},
+			Flags:  discordgo.MessageFlagsEphemeral,
 		},
 	})
 
