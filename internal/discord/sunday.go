@@ -27,7 +27,7 @@ func extractImageURL(html string) string {
 	return ""
 }
 
-// StartSundayNoticeLoop : 백그라운드에서 매주 금요일 오전 10시 5분에 썬데이 메이플 공지를 체크하여 지정된 채널로 알림을 보냅니다.
+// StartSundayNoticeLoop : 백그라운드에서 매주 금요일 오전 10시부터 11시까지 썬데이 메이플 공지를 체크하여 지정된 채널로 알림을 보냅니다.
 func (b *Bot) StartSundayNoticeLoop() {
 	if b.sundayChannelID == "" {
 		log.Println("[썬데이알림] SUNDAY_CHANNEL_ID가 설정되지 않아 썬데이 메이플 백그라운드 알림을 시작하지 않습니다.")
@@ -41,7 +41,7 @@ func (b *Bot) StartSundayNoticeLoop() {
 		loc = time.FixedZone("KST", 9*60*60)
 	}
 
-	log.Printf("[썬데이알림] 썬데이 메이플 알림 루프 시작 (대상 채널: %s, 매주 금요일 오전 10시 5분 실행 예정)", b.sundayChannelID)
+	log.Printf("[썬데이알림] 썬데이 메이플 알림 루프 시작 (대상 채널: %s, 매주 금요일 오전 10시부터 11시까지 10초 간격 조회 예정)", b.sundayChannelID)
 
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -51,30 +51,47 @@ func (b *Bot) StartSundayNoticeLoop() {
 	for range ticker.C {
 		now := time.Now().In(loc)
 
-		// 금요일 오전 10시 5분인지 검사 (10:05:00 ~ 10:05:59 사이)
-		if now.Weekday() == time.Friday && now.Hour() == 10 && now.Minute() == 5 {
+		// 금요일 오전 10시인지 검사
+		if now.Weekday() == time.Friday && now.Hour() == 10 {
 			year, week := now.ISOWeek()
-			// 이번 주 금요일에 이미 실행했는지 체크 (중복 실행 방지)
+			// 이번 주 금요일에 이미 조회 루프를 시작했는지 체크 (중복 실행 방지)
 			if lastRunYear == year && lastRunWeek == week {
 				continue
 			}
 
-			log.Println("[썬데이알림] 금요일 오전 10시 5분 썬데이 메이플 공지 조회 시작...")
+			log.Println("[썬데이알림] 금요일 오전 10시 썬데이 메이플 공지 조회 시작...")
 			lastRunYear = year
 			lastRunWeek = week
 
-			// 조회 및 전송 로직 비동기 실행
-			go b.checkAndSendSundayNotice()
+			// 오전 11시까지 조회 및 전송 로직 비동기 실행
+			go b.runSundayNoticeChecks(loc)
 		}
 	}
 }
 
-func (b *Bot) checkAndSendSundayNotice() {
+func (b *Bot) runSundayNoticeChecks(loc *time.Location) {
+	now := time.Now().In(loc)
+	deadline := time.Date(now.Year(), now.Month(), now.Day(), 11, 0, 0, 0, loc)
+
+	for time.Now().In(loc).Before(deadline) {
+		if b.checkAndSendSundayNotice() {
+			return
+		}
+
+		timer := time.NewTimer(10 * time.Second)
+		<-timer.C
+	}
+
+	log.Println("[썬데이알림] 오전 11시까지 공지를 찾지 못해 이번 주 조회를 종료합니다.")
+}
+
+// checkAndSendSundayNotice는 공지를 찾아 메시지 전송까지 성공하면 true를 반환합니다.
+func (b *Bot) checkAndSendSundayNotice() bool {
 	// 1. 이벤트 공지 목록 조회
 	list, err := b.nexonClient.GetEventNoticeList()
 	if err != nil {
 		log.Printf("[썬데이알림] 이벤트 목록 조회 실패: %v", err)
-		return
+		return false
 	}
 
 	// 2. "스페셜 썬데이 메이플" 혹은 "썬데이 메이플" 공지 찾기
@@ -96,15 +113,15 @@ func (b *Bot) checkAndSendSundayNotice() {
 
 	// 공지를 찾지 못한 경우
 	if targetNotice == nil {
-		log.Println("[썬데이알림] 이번 주 썬데이 메이플 공지를 찾을 수 없습니다. (아직 등록되지 않았거나 없음)")
-		return
+		log.Println("[썬데이알림] 썬데이 메이플 공지를 찾을 수 없습니다. 10초 후 다시 조회합니다.")
+		return false
 	}
 
 	// 3. 공지 상세 조회
 	detail, err := b.nexonClient.GetEventDetail(targetNotice.NoticeID)
 	if err != nil {
 		log.Printf("[썬데이알림] 이벤트 상세 조회 실패 (ID: %d): %v", targetNotice.NoticeID, err)
-		return
+		return false
 	}
 
 	// 4. HTML contents에서 이미지 URL 추출
@@ -137,7 +154,10 @@ func (b *Bot) checkAndSendSundayNotice() {
 	_, err = b.session.ChannelMessageSendEmbed(b.sundayChannelID, embed)
 	if err != nil {
 		log.Printf("[썬데이알림] 썬데이 메이플 알림 전송 실패: %v", err)
+		return false
 	} else {
 		log.Printf("[썬데이알림] 썬데이 메이플 알림 전송 완료! (제목: %s)", detail.Title)
 	}
+
+	return true
 }
